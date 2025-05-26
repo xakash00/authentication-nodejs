@@ -1,7 +1,7 @@
 module.exports = {
     apps: [
         {
-            name: 'blogs-crud',
+            name: 'users-auth',
             script: 'dist/app.js',
             watch: false,
             env: {
