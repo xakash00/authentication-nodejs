@@ -19,8 +19,8 @@ const loginForm = (req: Request, res: Response): void => {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.EMAIL_USER!,
-        pass: process.env.EMAIL_PASS!
+        user: config.EMAIL_USER!,
+        pass: config.EMAIL_PASS!
     }
 });
 
@@ -99,7 +99,7 @@ const refreshToken = async (req: Request, res: Response, next: NextFunction): Pr
             return;
         }
 
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { _id: string };
+        const decoded = jwt.verify(refreshToken, config.JWT_SECRET!) as { _id: string };
         const user = await User.findOne({
             _id: decoded._id,
             'tokens.token': refreshToken,
@@ -299,10 +299,10 @@ const requestPasswordReset = async (req: Request, res: Response) => {
         });
         await resetToken.save();
 
-        const resetLink = `${process.env.BASE_URL}?token=${token}`;
+        const resetLink = `${config.BASE_URL}?token=${token}`;
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM!,
+            from: config.EMAIL_USER!,
             to: email,
             subject: 'Password Reset Request',
             html: `
