@@ -1,6 +1,6 @@
 import express from 'express';
 import { isDBConnected } from '../config/db';
-import { deleteUser, getUserDetails, login, loginForm, logout, logoutAll, registerForm, registerNewUser, updateUserDetails } from '../controllers/userControllers';
+import { deleteUser, getUserDetails, login, loginForm, logout, logoutAll, refreshToken, registerForm, registerNewUser, requestPasswordReset, resetPassword, updateUserDetails } from '../controllers/userControllers';
 import { getHomePage, getProducts } from '../controllers/cartController';
 import { auth } from '../middlewares/auth';
 import { ownerShipCheck } from '../middlewares/ownerShipCheck';
@@ -26,6 +26,9 @@ router.get('/login', loginForm)
 router.post('/login', login)
 router.get('/logout', auth, logout)
 router.get('/logout-all', auth, logoutAll)
+router.post('/refresh', refreshToken)
+router.post('/reset-password/:token', resetPassword)
+router.post('/verify-password', requestPasswordReset);
 
 //users
 router.delete('/delete/:slug', ownerShipCheck, deleteUser)
