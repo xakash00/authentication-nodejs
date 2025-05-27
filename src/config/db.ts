@@ -9,7 +9,7 @@ let isDBConnected = false;
 const connectDB = async () => {
     try {
         await mongoose.connect(config.MONGODB_URI, {
-            dbName: 'cartDB',
+            dbName: 'user-auth',
         });
         console.log("MongoDB connected");
         isDBConnected = true;

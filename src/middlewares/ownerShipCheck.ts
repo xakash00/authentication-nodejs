@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+import { config } from '../config/test-config';
 import User from '../models/AuthModels';
 import { Response, NextFunction } from 'express';
 
@@ -9,7 +10,7 @@ export const ownerShipCheck = async (req: any, res: Response, next: NextFunction
         if (!token) {
             res.status(401).json({ message: 'No token provided.' });
         } else {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { _id: string };
+            const decoded = jwt.verify(token, config.JWT_SECRET) as { _id: string };
             const user = await User.findOne({ _id: decoded._id, 'tokens.token': token });
 
             if (!user) {
@@ -21,6 +22,7 @@ export const ownerShipCheck = async (req: any, res: Response, next: NextFunction
         }
         next();
     } catch (err) {
+        console.log({ err })
         res.status(401).json({ message: 'Unauthorized. Invalid or expired token.' });
     }
 };

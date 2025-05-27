@@ -64,22 +64,16 @@ const login = async (req: Request, res: Response, next: NextFunction): Promise<v
             return;
         }
 
-        const { accessToken, refreshToken } = await user.generateAuthToken();
+        const token = await user.generateAuthToken();
 
-
-        res.cookie("accessToken", accessToken, {
-            expires: new Date(Date.now() + 15 * 60 * 1000), //15m
+        res.cookie("utoken", token, {
+            expires: new Date(Date.now() + 600000),
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict'
         });
 
-        res.cookie("refreshToken", refreshToken, {
-            expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            path: '/api/auth/refresh'
+        res.status(201).json({
+            message: 'Login successful.',
+            accessToken: token,
         });
 
     } catch (e) {
@@ -299,18 +293,30 @@ const requestPasswordReset = async (req: Request, res: Response) => {
         });
         await resetToken.save();
 
-        const resetLink = `${config.BASE_URL}?token=${token}`;
+        const resetLink = `${config.BASE_URL}/reset-password/${token}`;
 
         const mailOptions = {
             from: config.EMAIL_USER!,
             to: email,
             subject: 'Password Reset Request',
-            html: `
-        <p>You requested a password reset.</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="${resetLink}">${resetLink}</a>
-        <p>This link will expire in 15 minutes.</p>
-      `
+            html: `<div style="background-color: #ECFDF5; color: #000; font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+                     <h2>Password Reset Request</h2>
+                     <p>You requested a password reset. Click the button below to proceed:</p>
+                     <a href="${resetLink}" style="
+                         display: inline-block;
+                         margin-top: 20px;
+                         padding: 12px 24px;
+                         background-color: rgb(5, 127, 92);
+                         color: #fff;
+                         text-decoration: none;
+                         border-radius: 5px;
+                         font-weight: bold;
+                     ">
+                       Reset Password
+                     </a>
+                     <p style="margin-top: 30px;">If you didn’t request this, you can ignore this email.</p>
+                     <p>This link will expire in 15 minutes.</p>
+                </div>`
         };
 
         await transporter.sendMail(mailOptions);
@@ -323,40 +329,51 @@ const requestPasswordReset = async (req: Request, res: Response) => {
     }
 };
 
-const resetPassword = async (req: Request, res: Response) => {
+const resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { resetToken, newPassword } = req.body;
+        const { token } = req.params;
+        const { newPassword } = req.body;
 
-        const decoded = jwt.verify(resetToken, config.JWT_SECRET!) as { userId: string };
-
-        const tokenDoc = await PasswordResetToken.findOne({
-            userId: decoded.userId,
-            token: resetToken,
-            expiresAt: { $gt: new Date() }
-        });
-
-        if (!tokenDoc) {
-            res.status(400).json({ message: 'Invalid or expired token' });
+        if (!token || !newPassword) {
+            res.status(400).json({ message: 'Token and new password are required.' });
             return;
         }
 
-        const user = await User.findById(decoded.userId);
+        // Find reset token in DB
+        const resetTokenDoc = await PasswordResetToken.findOne({ token });
+
+        if (!resetTokenDoc) {
+            res.status(400).json({ message: 'Invalid or expired reset token.' });
+            return;
+        }
+
+        // Check expiration
+        if (resetTokenDoc.expiresAt < new Date()) {
+            await resetTokenDoc.deleteOne();
+            res.status(400).json({ message: 'Reset token has expired.' });
+            return;
+        }
+
+        const user = await User.findById(resetTokenDoc.userId);
         if (!user) {
-            res.status(404).json({ message: 'User not found' });
+            res.status(404).json({ message: 'User not found.' });
             return;
         }
 
         user.password = newPassword;
+        user.tokens = []; //force-relogin clearing tokens array
+
         await user.save();
+        await resetTokenDoc.deleteOne();
 
-        await PasswordResetToken.deleteOne({ _id: tokenDoc._id }); // Invalidate token after use
+        res.status(200).json({ message: 'Password has been reset. Please log in again.' });
 
-        res.status(200).json({ message: 'Password reset successful' });
     } catch (err) {
         console.error('Reset Password Error:', err);
         res.status(500).json({ message: 'Server error' });
     }
 };
+
 
 
 export { login, loginForm, logout, registerForm, registerNewUser, logoutAll, deleteUser, getUserDetails, updateUserDetails, refreshToken, requestPasswordReset, resetPassword }
