@@ -26,7 +26,7 @@ router.get('/login', loginForm)
 router.post('/login', login)
 router.get('/logout', auth, logout)
 router.get('/logout-all', auth, logoutAll)
-router.post('/reset-password/:token', resetPassword)
+router.post('/reset-password', resetPassword)
 router.post('/verify-password', requestPasswordReset);
 
 //users

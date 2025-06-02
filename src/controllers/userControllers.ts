@@ -3,6 +3,7 @@ import User, { IToken } from '../models/AuthModels';
 import { AuthenticatedRequest } from '../middlewares/auth';
 import PasswordResetToken from '../models/PasswrodResetModel';
 import { config } from '../config/test-config';
+import { generateOTP } from '../utlis/fileHelper';
 
 const jwt = require("jsonwebtoken")
 const bcrypt = require('bcrypt');
@@ -141,6 +142,7 @@ const refreshToken = async (req: Request, res: Response, next: NextFunction): Pr
         }
     }
 };
+
 const logout = async (
     req: AuthenticatedRequest,
     res: Response,
@@ -276,98 +278,88 @@ const requestPasswordReset = async (req: Request, res: Response) => {
         const { email } = req.body;
 
         const user = await User.findOne({ email });
-        if (!user) { res.status(404).json({ message: 'User not found' }); return; };
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
 
-        const token = jwt.sign(
-            { userId: user._id },
-            config.JWT_SECRET!,
-            { expiresIn: config.JWT_EXPIRES_IN }
-        );
+        // Generate OTP
+        const otp = generateOTP();
 
+        // Remove any existing OTP tokens for this user
         await PasswordResetToken.deleteMany({ userId: user._id });
 
+        // Save new OTP
         const resetToken = new PasswordResetToken({
             userId: user._id,
-            token,
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 min
+            token: otp,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
         });
         await resetToken.save();
-
-        const resetLink = `${config.BASE_URL}/reset-password/${token}`;
 
         const mailOptions = {
             from: config.EMAIL_USER!,
             to: email,
-            subject: 'Password Reset Request',
-            html: `<div style="background-color: #ECFDF5; color: #000; font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-                     <h2>Password Reset Request</h2>
-                     <p>You requested a password reset. Click the button below to proceed:</p>
-                     <a href="${resetLink}" style="
-                         display: inline-block;
-                         margin-top: 20px;
-                         padding: 12px 24px;
-                         background-color: rgb(5, 127, 92);
-                         color: #fff;
-                         text-decoration: none;
-                         border-radius: 5px;
-                         font-weight: bold;
-                     ">
-                       Reset Password
-                     </a>
-                     <p style="margin-top: 30px;">If you didn’t request this, you can ignore this email.</p>
-                     <p>This link will expire in 15 minutes.</p>
-                </div>`
+            subject: 'Your Password Reset OTP',
+            html: `
+        <div style="background-color: #ECFDF5; color: #000; font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+          <h2>Password Reset Request</h2>
+          <p>Your OTP for password reset is:</p>
+          <h1 style="letter-spacing: 4px; margin: 20px 0;">${otp}</h1>
+          <p>This OTP will expire in 15 minutes.</p>
+          <p>If you didn’t request this, you can ignore this email.</p>
+        </div>`,
         };
 
         await transporter.sendMail(mailOptions);
 
-        res.status(200).json({ message: 'Password reset link sent to your email.' });
-
+        res.status(200).json({ message: 'OTP sent to your email.' });
     } catch (err) {
         console.error('Request Password Reset Error:', err);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
+
 const resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { token } = req.params;
-        const { newPassword } = req.body;
+        const { email, otp, newPassword } = req.body;
 
-        if (!token || !newPassword) {
-            res.status(400).json({ message: 'Token and new password are required.' });
+        if (!email || !otp || !newPassword) {
+            res.status(400).json({ message: 'Email, OTP, and new password are required.' });
             return;
         }
 
-        // Find reset token in DB
-        const resetTokenDoc = await PasswordResetToken.findOne({ token });
-
+        // Find the reset token
+        const resetTokenDoc = await PasswordResetToken.findOne({ token: otp }).populate('userId');
         if (!resetTokenDoc) {
-            res.status(400).json({ message: 'Invalid or expired reset token.' });
+            res.status(400).json({ message: 'Invalid or expired OTP.' });
             return;
         }
 
         // Check expiration
         if (resetTokenDoc.expiresAt < new Date()) {
             await resetTokenDoc.deleteOne();
-            res.status(400).json({ message: 'Reset token has expired.' });
+            res.status(400).json({ message: 'OTP has expired.' });
             return;
         }
 
+        // Ensure email matches the user
         const user = await User.findById(resetTokenDoc.userId);
-        if (!user) {
-            res.status(404).json({ message: 'User not found.' });
+        if (!user || user.email !== email) {
+            res.status(404).json({ message: 'User not found or email mismatch.' });
             return;
         }
 
+        // Update password and clear tokens
         user.password = newPassword;
-        user.tokens = []; //force-relogin clearing tokens array
-
+        user.tokens = [];
         await user.save();
+
+        // Delete the reset token
         await resetTokenDoc.deleteOne();
 
         res.status(200).json({ message: 'Password has been reset. Please log in again.' });
-
     } catch (err) {
         console.error('Reset Password Error:', err);
         res.status(500).json({ message: 'Server error' });
