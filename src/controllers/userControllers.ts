@@ -313,7 +313,7 @@ const requestPasswordReset = async (req: Request, res: Response) => {
 
         await transporter.sendMail(mailOptions);
 
-        res.status(200).json({ message: 'OTP sent to your email.' });
+        res.status(200).json({ message: "OTP sent to your email.", email });
     } catch (err) {
         console.error('Request Password Reset Error:', err);
         res.status(500).json({ message: 'Server error' });

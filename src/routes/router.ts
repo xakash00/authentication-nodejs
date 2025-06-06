@@ -27,7 +27,7 @@ router.post('/login', login)
 router.get('/logout', auth, logout)
 router.get('/logout-all', auth, logoutAll)
 router.post('/reset-password', resetPassword)
-router.post('/verify-password', requestPasswordReset);
+router.post('/request-otp', requestPasswordReset);
 
 //users
 router.delete('/delete/:slug', ownerShipCheck, deleteUser)
