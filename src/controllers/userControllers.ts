@@ -3,7 +3,7 @@ import User, { IToken } from '../models/AuthModels';
 import { AuthenticatedRequest } from '../middlewares/auth';
 import PasswordResetToken from '../models/PasswrodResetModel';
 import { config } from '../config/test-config';
-import { generateOTP } from '../utlis/fileHelper';
+import { generateOTP, transporter } from '../utlis/fileHelper';
 
 const jwt = require("jsonwebtoken")
 const bcrypt = require('bcrypt');
@@ -17,17 +17,11 @@ const loginForm = (req: Request, res: Response): void => {
     res.render('login');
 };
 
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: config.EMAIL_USER!,
-        pass: config.EMAIL_PASS!
-    }
-});
+
 
 const registerNewUser = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { user_name, email, password } = req.body;
+        const { user_name, email, password, role } = req.body;
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -35,17 +29,19 @@ const registerNewUser = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const registerUser = new User({ user_name, email, password });
+        const registerUser = new User({
+            user_name,
+            email,
+            password,
+            role: role === 'manager' ? 'manager' : 'employee', // default fallback
+            slug: user_name.toLowerCase().replace(/\s+/g, '-')
+        });
+
         await registerUser.save();
 
-        res.status(201).json({
-            message: 'Registration successful.',
-        });
-
+        res.status(201).json({ message: 'Registration successful.' });
     } catch (err) {
-        res.status(500).json({
-            message: 'Server error. Please try again later.',
-        });
+        res.status(500).json({ message: 'Server error. Please try again later.' });
     }
 };
 
@@ -85,63 +81,7 @@ const login = async (req: Request, res: Response, next: NextFunction): Promise<v
     }
 }
 
-const refreshToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-        const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
-        if (!refreshToken) {
-            res.status(401).json({ message: 'No refresh token provided' });
-            return;
-        }
-
-        const decoded = jwt.verify(refreshToken, config.JWT_SECRET!) as { _id: string };
-        const user = await User.findOne({
-            _id: decoded._id,
-            'tokens.token': refreshToken,
-            'tokens.type': 'refresh'
-        });
-
-        if (!user) {
-            res.status(401).json({ message: 'Invalid refresh token' });
-            return;
-        }
-
-        const accessToken = user.generateAuthToken();
-
-        // Removing old accesstokens
-        user.tokens = user.tokens.filter((token: IToken) => token.type !== 'access');
-        user.tokens.push({
-            token: accessToken,
-            type: 'access',
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 m
-        } as IToken);  // Explicitly type the object being pushed
-
-        await user.save();
-
-        // Set newaccesstoken 
-        res.cookie("accessToken", accessToken, {
-            expires: new Date(Date.now() + 15 * 60 * 1000), // 15 m
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict'
-        });
-
-        res.status(200).json({
-            message: 'Token refreshed successfully',
-            accessToken
-        });
-
-    } catch (err: any) {
-        console.error('Refresh token error:', err);
-        if (err.name === 'JsonWebTokenError') {
-            res.status(401).json({ message: 'Invalid refresh token' });
-        } else if (err.name === 'TokenExpiredError') {
-            res.status(401).json({ message: 'Refresh token expired' });
-        } else {
-            res.status(500).json({ message: 'Internal server error' });
-        }
-    }
-};
 
 const logout = async (
     req: AuthenticatedRequest,
@@ -190,15 +130,15 @@ const logoutAll = async (
     }
 };
 
-
 const getUserDetails = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
         const { slug } = req.params;
+        console.log(req.params)
         if (req?.user.slug.toString() !== slug) {
             res.status(403).json({ message: 'Forbidden. You are not allowed to access this resource.' });
             return
         }
-        res.status(200).json({ data: { user_name: req.user.user_name, email: req.user.email } });
+        res.status(200).json({ data: { user_name: req.user.user_name, email: req.user.email, role: req.user.role } });
 
 
     } catch (err) {
@@ -207,30 +147,34 @@ const getUserDetails = async (req: AuthenticatedRequest, res: Response, next: Ne
     }
 };
 
-const deleteUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+const deleteUser = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
         const { slug } = req.params;
-        if (req?.user.slug.toString() !== slug) {
-            res.status(403).json({
-                message: 'Forbidden. You are not allowed to access this resource.'
-            });
+
+        const userToDelete = await User.findOne({ slug });
+        if (!userToDelete) {
+            res.status(404).json({ message: 'User not found' });
             return;
         }
 
-        const deletedUser = await User.findOneAndDelete({ slug });
-        if (!deletedUser) {
-            res.status(404).json({ message: 'User not found.' });
-            return;
+        const isSelf = req.user.slug === slug;
+        const isManager = req.user.role === 'manager';
+
+        // Only allow if self or manager deleting employee
+        if (!isSelf && (!isManager || userToDelete.role === 'manager')) {
+            res.status(403).json({ message: 'Forbidden: Not authorized to delete this user' });
+            return
         }
 
+        await userToDelete.deleteOne();
         res.status(200).json({ message: 'User deleted successfully' });
 
     } catch (err) {
         console.error('Delete error:', err);
-        next(err);
         res.status(500).json({ message: 'Server error.' });
     }
 };
+
 
 const updateUserDetails = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
@@ -242,36 +186,40 @@ const updateUserDetails = async (req: AuthenticatedRequest, res: Response): Prom
             return;
         }
 
-        if (req.user.slug !== slug) {
-            res.status(403).json({ message: 'Forbidden: Not your account' });
+        const isSelf = req.user.slug === slug;
+        const isManager = req.user.role === 'manager';
+
+        // Prevent manager from updating another manager
+        if (!isSelf && (!isManager || user.role === 'manager')) {
+            res.status(403).json({ message: 'Forbidden: Not authorized to update this user' });
             return;
         }
 
-        const protectedFields = ['name', 'email', 'password'];
+        const protectedFields = ['email', 'password', 'role']; // prevent changing role here
         const updates = Object.keys(req.body);
-
         const hasInvalidField = updates.some(field => protectedFields.includes(field));
         if (hasInvalidField) {
-            res.status(400).json({ message: 'You cannot update name, email, or password.' });
+            res.status(400).json({ message: 'You cannot update email, password, or role via this route' });
             return;
         }
+
         updates.forEach(field => {
             if (req.body[field] === null) {
-                user.set(field, undefined); // Remove field
+                user.set(field, undefined);
             } else {
-                user.set(field, req.body[field]); // Add or update field
+                user.set(field, req.body[field]);
             }
         });
 
         await user.save();
-
-        res.status(200).json({ message: 'User updated successfully', user });
+        res.status(200).json({ message: 'User updated successfully' });
 
     } catch (err) {
         console.error('Update error:', err);
         res.status(500).json({ message: 'Internal Server Error' });
     }
 };
+
 
 const requestPasswordReset = async (req: Request, res: Response) => {
     try {
@@ -368,4 +316,4 @@ const resetPassword = async (req: Request, res: Response): Promise<void> => {
 
 
 
-export { login, loginForm, logout, registerForm, registerNewUser, logoutAll, deleteUser, getUserDetails, updateUserDetails, refreshToken, requestPasswordReset, resetPassword }
+export { login, loginForm, logout, registerForm, registerNewUser, logoutAll, deleteUser, getUserDetails, updateUserDetails, requestPasswordReset, resetPassword }
