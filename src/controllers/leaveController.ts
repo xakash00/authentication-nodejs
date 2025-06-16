@@ -24,10 +24,16 @@ export const requestLeave = async (req: any, res: Response) => {
             return res.status(400).json({ message: 'End date must be after start date' });
         }
 
+        // Get manager details
+        const manager = await mongoose.model('User').findById(employee.manager);
+        if (!manager) {
+            return res.status(400).json({ message: 'Manager not found' });
+        }
+
         // 4. Create and save leave
         const leave = await Leave.create({
             employee: employee._id,
-            manager: employee.manager,
+            managerSlug: manager.slug,
             startDate,
             endDate,
             reason,
@@ -60,11 +66,8 @@ export const reviewLeave = async (req: any, res: Response) => {
             return res.status(404).json({ message: 'Leave not found' });
         }
 
-        // 2. Type-safe manager ID comparison
-        const leaveManagerId = leave.manager as Types.ObjectId;
-        const currentManagerId = manager._id as Types.ObjectId;
-
-        if (!leaveManagerId.equals(currentManagerId)) {
+        // 2. Verify manager
+        if (leave.managerSlug !== manager.slug) {
             return res.status(403).json({
                 message: 'Only the assigned manager can review this leave'
             });
@@ -255,7 +258,7 @@ export const getUserOwnLeaves = async (req: any, res: Response) => {
 
         const leaves = await Leave.find(query)
             .sort({ startDate: -1 })
-            .populate('manager', 'user_name email');
+            .populate('managerSlug', 'user_name slug email');
 
         res.status(200).json({
             success: true,
@@ -268,7 +271,7 @@ export const getUserOwnLeaves = async (req: any, res: Response) => {
                 type: leave.type,
                 status: leave.status,
                 reason: leave.reason,
-                manager: leave.manager
+                manager: leave.managerSlug
             }))
         });
 

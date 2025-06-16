@@ -18,7 +18,7 @@ export enum LeaveType {
 
 export interface ILeave extends Document {
     employee: Types.ObjectId | PopulatedUser;
-    manager: Types.ObjectId | PopulatedUser;
+    managerSlug: string;
     startDate: Date;
     endDate: Date;
     reason: string;
@@ -37,7 +37,7 @@ type LeaveModel = Model<ILeave, {}, ILeaveMethods>;
 
 const LeaveSchema = new Schema<ILeave, LeaveModel, ILeaveMethods>({
     employee: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    manager: { type: Schema.Types.ObjectId },
+    managerSlug: { type: String, ref: 'User' },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     reason: { type: String, required: true },
@@ -56,7 +56,7 @@ const LeaveSchema = new Schema<ILeave, LeaveModel, ILeaveMethods>({
 // Email notification to manager when leave is requested
 LeaveSchema.methods.notifyManager = async function () {
     const leave = this as ILeave;
-    const manager = await mongoose.model('User').findById(leave.manager);
+    const manager = await mongoose.model('User').findOne({ slug: leave.managerSlug });
     const employee = await mongoose.model('User').findById(leave.employee);
 
     if (manager && employee) {
@@ -76,7 +76,7 @@ LeaveSchema.methods.notifyManager = async function () {
 // Email notification to employee when leave is approved/rejected
 LeaveSchema.methods.notifyEmployee = async function (action: 'approved' | 'rejected') {
     const leave = this as ILeave;
-    const manager = await mongoose.model('User').findById(leave.manager);
+    const manager = await mongoose.model('User').findOne({ slug: leave.managerSlug });
     const employee = await mongoose.model('User').findById(leave.employee);
 
     if (manager && employee) {

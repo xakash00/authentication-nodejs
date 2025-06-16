@@ -4,6 +4,11 @@ import { config } from '../config/test-config';
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+export enum UserRole {
+    MANAGER = 'manager',
+    EMPLOYEE = 'employee'
+}
+
 export interface IToken {
     token: string;
     type: 'access';
@@ -21,60 +26,54 @@ export interface IManager extends Document {
     email: string;
 }
 
-
 export interface IUser extends Document {
-    slug: string;
     user_name: string;
     email: string;
     password: string;
-    role: 'manager' | 'employee';
+    role: UserRole;
+    department: string;
+    manager?: string;
     tokens: IToken[];
-    generateAuthToken(): Promise<string>;
-    removeExpiredTokens(): Promise<void>;
-    manager?: Types.ObjectId;
-    totalLeaves: number;
-    leavesLeft: number;
-    leaveTypes: {
+    totalLeaves?: number;
+    leavesLeft?: number;
+    leavesTaken?: number;
+    leaveTypes?: {
         annual: number;
         sick: number;
-        maternity: number;
-        paternity: number;
-        unpaid: number;
+        maternity?: number;
+        paternity?: number;
+        unpaid?: number;
     };
+    leaveHistory?: Types.ObjectId[];
+    slug: string;
+    generateAuthToken(): Promise<string>;
 }
-
 
 interface IUserModel extends Model<IUser> {
 
 }
 
 const UserSchema = new Schema<IUser, IUserModel>({
-    slug: { type: String, unique: true },
     user_name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
-    role: { type: String, enum: ['manager', 'employee'], default: 'employee', required: true },
-    manager: {
-        type: Schema.Types.ObjectId,
-        ref: 'User'
-    },
     password: { type: String, required: true },
-    tokens: [{
-        token: { type: String, required: true },
-        type: { type: String, enum: ['access'], default: 'access' },
-        expiresAt: { type: Date }
-    }],
-    totalLeaves: { type: Number, default: 20 },
-    leavesLeft: { type: Number, default: 20 },
+    role: { type: String, enum: Object.values(UserRole), required: true },
+    department: { type: String },
+    manager: { type: String, ref: 'User' },
+    tokens: [{ type: Object }],
+    totalLeaves: { type: Number, default: 0 },
+    leavesLeft: { type: Number, default: 0 },
+    leavesTaken: { type: Number, default: 0 },
     leaveTypes: {
-        annual: { type: Number, default: 20 },
-        sick: { type: Number, default: 10 },
-        maternity: { type: Number, default: 90 },
-        paternity: { type: Number, default: 14 },
+        annual: { type: Number, default: 0 },
+        sick: { type: Number, default: 0 },
+        maternity: { type: Number, default: 0 },
+        paternity: { type: Number, default: 0 },
         unpaid: { type: Number, default: 0 }
-    }
-}, { strict: false });
-
-
+    },
+    leaveHistory: [{ type: Schema.Types.ObjectId, ref: 'Leave' }],
+    slug: { type: String, unique: true }
+}, { timestamps: true });
 
 UserSchema.methods.generateAuthToken = async function (): Promise<String> {
     const token = jwt.sign(
@@ -87,7 +86,6 @@ UserSchema.methods.generateAuthToken = async function (): Promise<String> {
     await this.save();
     return token;
 }
-
 
 UserSchema.pre('save', async function (next) {
     const user = this as any;

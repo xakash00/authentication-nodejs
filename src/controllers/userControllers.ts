@@ -41,6 +41,7 @@ const registerNewUser = async (req: Request, res: Response): Promise<void> => {
 
         res.status(201).json({ message: 'Registration successful.' });
     } catch (err) {
+        console.log(err)
         res.status(500).json({ message: 'Server error. Please try again later.' });
     }
 };

@@ -219,8 +219,8 @@ export const assignManager = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Target manager is not valid' });
         }
 
-        // Assign manager's ObjectId directly
-        employee.manager = manager._id as Types.ObjectId;
+        // Assign manager's slug
+        employee.manager = manager.slug;
 
         await employee.save();
 
