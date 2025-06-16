@@ -21,7 +21,7 @@ export const getManagerDashboard = (req: AuthenticatedRequest, res: Response) =>
 
 export const listAllUsersWithRoles = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-        const users = await User.find({ _id: { $ne: req.user._id } }, 'user_name email role');
+        const users = await User.find({ _id: { $ne: req.user._id } }, 'user_name email role slug');
         res.status(200).json({ users });
     } catch (err) {
         console.error('Error fetching users:', err);
